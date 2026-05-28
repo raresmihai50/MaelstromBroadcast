@@ -1,0 +1,6 @@
+target/
+store/
+.vscode/
+maelstrom/
+*.tar.bz2
+*.log
