@@ -1,6 +1,16 @@
+# Fișiere de build (Maven)
 target/
+*.class
+
+# Folderul de loguri și stări (Maelstrom)
 store/
-.vscode/
+maelstrom.tar.bz2
 maelstrom/
-*.tar.bz2
+
+# Configurații VS Code (opțional, dar recomandat)
+.vscode/
+
+# Alte fișiere temporare
 *.log
+*.tmp
+.DS_Store
