@@ -1,0 +1,88 @@
+0	:invoke	:broadcast	0
+0	:ok	:broadcast	0
+1	:invoke	:broadcast	1
+1	:ok	:broadcast	1
+2	:invoke	:read	nil
+2	:ok	:read	[]
+0	:invoke	:broadcast	2
+0	:ok	:broadcast	2
+0	:invoke	:read	nil
+0	:ok	:read	[0 2]
+1	:invoke	:broadcast	3
+1	:ok	:broadcast	3
+2	:invoke	:broadcast	4
+2	:ok	:broadcast	4
+0	:invoke	:read	nil
+0	:ok	:read	[0 2]
+0	:invoke	:broadcast	5
+0	:ok	:broadcast	5
+1	:invoke	:read	nil
+1	:ok	:read	[1 3]
+2	:invoke	:broadcast	6
+2	:ok	:broadcast	6
+0	:invoke	:broadcast	7
+0	:ok	:broadcast	7
+0	:invoke	:broadcast	8
+0	:ok	:broadcast	8
+1	:invoke	:broadcast	9
+1	:ok	:broadcast	9
+2	:invoke	:broadcast	10
+2	:ok	:broadcast	10
+0	:invoke	:read	nil
+0	:ok	:read	[0 2 5 7 8]
+0	:invoke	:read	nil
+0	:ok	:read	[0 2 5 7 8]
+1	:invoke	:broadcast	11
+1	:ok	:broadcast	11
+2	:invoke	:broadcast	12
+2	:ok	:broadcast	12
+0	:invoke	:read	nil
+0	:ok	:read	[0 2 5 7 8]
+0	:invoke	:read	nil
+0	:ok	:read	[0 2 5 7 8]
+1	:invoke	:broadcast	13
+1	:ok	:broadcast	13
+2	:invoke	:read	nil
+2	:ok	:read	[4 6 10 12]
+0	:invoke	:broadcast	14
+0	:ok	:broadcast	14
+0	:invoke	:broadcast	15
+0	:ok	:broadcast	15
+1	:invoke	:broadcast	16
+1	:ok	:broadcast	16
+2	:invoke	:read	nil
+2	:ok	:read	[4 6 10 12]
+0	:invoke	:broadcast	17
+0	:ok	:broadcast	17
+0	:invoke	:read	nil
+0	:ok	:read	[0 2 5 7 8 14 15 17]
+1	:invoke	:read	nil
+1	:ok	:read	[1 3 9 11 13 16]
+2	:invoke	:broadcast	18
+2	:ok	:broadcast	18
+0	:invoke	:broadcast	19
+0	:ok	:broadcast	19
+0	:invoke	:broadcast	20
+0	:ok	:broadcast	20
+1	:invoke	:broadcast	21
+1	:ok	:broadcast	21
+2	:invoke	:broadcast	22
+2	:ok	:broadcast	22
+0	:invoke	:read	nil
+0	:ok	:read	[0 2 5 7 8 14 15 17 19 20]
+0	:invoke	:broadcast	23
+0	:ok	:broadcast	23
+1	:invoke	:broadcast	24
+1	:ok	:broadcast	24
+2	:invoke	:broadcast	25
+2	:ok	:broadcast	25
+0	:invoke	:broadcast	26
+0	:ok	:broadcast	26
+0	:invoke	:read	nil
+0	:ok	:read	[0 2 5 7 8 14 15 17 19 20 23 26]
+1	:invoke	:read	nil
+2	:invoke	:read	nil
+0	:invoke	:read	nil
+1	:ok	:read	[1 3 9 11 13 16 21 24]
+0	:ok	:read	[0 2 5 7 8 14 15 17 19 20 23 26]
+2	:ok	:read	[4 6 10 12 18 22 25]
