@@ -5,10 +5,7 @@ import java.io.InputStreamReader;
 import org.json.JSONObject;
 
 /**
- * Universitatea Babeș-Bolyai
- * Proiect: Reliable Broadcast Node
- * Nume: Ghiurau Rares Mihai
- * Grupa: 244
+ * TODO sa fac separat 2 layere sa ruleze separat pentru a vedea diferentele intre cele 2 implementari
  */
 public class App {
     public static void main(String[] args) {
