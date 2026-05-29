@@ -15,7 +15,7 @@ public class EventProcessor implements Runnable {
     // BUTONUL DE COMUTARE IMPLEMENTĂRI
     // true  = Eager Reliable Broadcast (Fără PFD, retransmisie instantanee, flood pe rețea)
     // false = Lazy Reliable Broadcast (Algoritmul 3.2, folosește PFD și mulțimea 'correct')
-    private final boolean EAGER_MODE = true; 
+    private final boolean EAGER_MODE = false; 
     // =======================================================
 
     private final BlockingQueue<Event> eventQueue = new LinkedBlockingQueue<>();
