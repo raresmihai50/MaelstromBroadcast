@@ -10,15 +10,22 @@ import maelstrombroadcast.layers.ReliableBroadcast;
 import org.json.JSONObject;
 
 public class EventProcessor implements Runnable {
+    
+    // =======================================================
+    // BUTONUL DE COMUTARE IMPLEMENTĂRI
+    // true  = Eager Reliable Broadcast (Fără PFD, retransmisie instantanee, flood pe rețea)
+    // false = Lazy Reliable Broadcast (Algoritmul 3.2, folosește PFD și mulțimea 'correct')
+    private final boolean EAGER_MODE = true; 
+    // =======================================================
+
     private final BlockingQueue<Event> eventQueue = new LinkedBlockingQueue<>();
     private String selfId;
     private List<String> allNodes;
 
-    // Stiva de straturi (Layers)
     private PerfectLink pl;
     private BestEffortBroadcast beb;
     private ReliableBroadcast rb;
-    private PerfectFailureDetector pfd; // Noul strat PFD adăugat
+    private PerfectFailureDetector pfd;
 
     private final java.util.Set<Integer> messages = new java.util.concurrent.CopyOnWriteArraySet<>();
 
@@ -26,25 +33,26 @@ public class EventProcessor implements Runnable {
         this.selfId = selfId;
         this.allNodes = allNodes;
 
-        // Construim stiva
         this.pl = new PerfectLink(selfId);
         this.beb = new BestEffortBroadcast(allNodes, pl);
         this.rb = new ReliableBroadcast(beb, selfId, allNodes);
         this.pfd = new PerfectFailureDetector(selfId, allNodes, pl, this);
 
-        // Respectarea cerinței: "a timer that puts a timeout event in the queue for PFD"
-        Thread timer = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    Thread.sleep(1000); // Generăm eveniment de check în fiecare secundă
-                    submitEvent(new Event(Event.Type.PFD_TIMEOUT, new JSONObject()));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+        // Pornim timer-ul pentru PFD DOAR dacă rulăm în modul Lazy
+        if (!EAGER_MODE) {
+            Thread timer = new Thread(() -> {
+                while (!Thread.currentThread().isInterrupted()) {
+                    try {
+                        Thread.sleep(1000);
+                        submitEvent(new Event(Event.Type.PFD_TIMEOUT, new JSONObject()));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
-            }
-        });
-        timer.setDaemon(true);
-        timer.start();
+            });
+            timer.setDaemon(true);
+            timer.start();
+        }
     }
 
     public void submitEvent(Event event) {
@@ -57,9 +65,8 @@ public class EventProcessor implements Runnable {
 
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                Event event = eventQueue.take(); // Un singur thread consumă secvențial coada
+                Event event = eventQueue.take();
                 
-                // --- 1. Tratăm evenimentele de la PFD (Timeouts și Crashes) ---
                 if (event.getType() == Event.Type.PFD_TIMEOUT) {
                     pfd.onTimeout();
                 } 
@@ -67,7 +74,6 @@ public class EventProcessor implements Runnable {
                     String crashedNode = event.getPayload().getString("node");
                     rb.onCrash(crashedNode);
                 } 
-                // --- 2. Tratăm mesajele normale de la rețea ---
                 else if (event.getType() == Event.Type.STDIN_MESSAGE) {
                     JSONObject msg = event.getPayload();
                     JSONObject body = msg.getJSONObject("body");
@@ -99,14 +105,22 @@ public class EventProcessor implements Runnable {
                         System.out.println(reply.toString());
                     }
                     else if ("heartbeat".equals(msgType)) {
-                        // Semnalăm PFD-ului că nodul este viu
                         pfd.onHeartbeat(msg.getString("src"));
                     }
                     else if ("broadcast".equals(msgType)) {
                         int value = body.getInt("message");
+                        messages.add(value);
                         
-                        rb.rbBcast(value);
-                        messages.add(value); // Îl livrăm și local (APP level)
+                        if (EAGER_MODE) {
+                            // EAGER APP -> BEB
+                            JSONObject payload = new JSONObject();
+                            payload.put("message", value);
+                            payload.put("original_sender", selfId);
+                            beb.bebBcast(payload);
+                        } else {
+                            // LAZY APP -> RB
+                            rb.rbBcast(value);
+                        }
 
                         JSONObject replyBody = new JSONObject();
                         replyBody.put("type", "broadcast_ok");
@@ -122,14 +136,22 @@ public class EventProcessor implements Runnable {
                     else if ("beb_data".equals(msgType)) {
                         JSONObject payload = body.getJSONObject("payload");
                         int value = payload.getInt("message");
-                        String originalSender = payload.getString("original_sender");
-                        String senderOfBeb = msg.getString("src");
                         
-                        // rbDeliver se va ocupa singur de verificări și relay-uri Lazy!
-                        boolean isNewMessage = rb.rbDeliver(senderOfBeb, originalSender, value);
-                        
-                        if (isNewMessage) {
-                            messages.add(value);
+                        if (EAGER_MODE) {
+                            // EAGER: relay instantaneu prin BEB
+                            if (!messages.contains(value)) {
+                                messages.add(value);
+                                beb.bebBcast(payload);
+                            }
+                        } else {
+                            // LAZY: trimitem către RB pentru a respecta setul "correct" și vectorul "from"
+                            String originalSender = payload.getString("original_sender");
+                            String senderOfBeb = msg.getString("src");
+                            boolean isNewMessage = rb.rbDeliver(senderOfBeb, originalSender, value);
+                            
+                            if (isNewMessage) {
+                                messages.add(value);
+                            }
                         }
                     }
                     else if ("read".equals(msgType)) {
