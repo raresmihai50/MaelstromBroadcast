@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import maelstrombroadcast.layers.BestEffortBroadcast;
+import maelstrombroadcast.layers.PerfectFailureDetector;
 import maelstrombroadcast.layers.PerfectLink;
 import maelstrombroadcast.layers.ReliableBroadcast;
 import org.json.JSONObject;
@@ -17,18 +18,33 @@ public class EventProcessor implements Runnable {
     private PerfectLink pl;
     private BestEffortBroadcast beb;
     private ReliableBroadcast rb;
+    private PerfectFailureDetector pfd; // Noul strat PFD adăugat
 
-    // Memoria nodului (ține minte numerele primite pentru operația de read)
     private final java.util.Set<Integer> messages = new java.util.concurrent.CopyOnWriteArraySet<>();
 
     public void init(String selfId, List<String> allNodes) {
         this.selfId = selfId;
         this.allNodes = allNodes;
 
-        // Construim stiva de jos în sus (PL -> BEB -> RB)
+        // Construim stiva
         this.pl = new PerfectLink(selfId);
         this.beb = new BestEffortBroadcast(allNodes, pl);
-        this.rb = new ReliableBroadcast(beb, selfId);
+        this.rb = new ReliableBroadcast(beb, selfId, allNodes);
+        this.pfd = new PerfectFailureDetector(selfId, allNodes, pl, this);
+
+        // Respectarea cerinței: "a timer that puts a timeout event in the queue for PFD"
+        Thread timer = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(1000); // Generăm eveniment de check în fiecare secundă
+                    submitEvent(new Event(Event.Type.PFD_TIMEOUT, new JSONObject()));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        timer.setDaemon(true);
+        timer.start();
     }
 
     public void submitEvent(Event event) {
@@ -41,8 +57,18 @@ public class EventProcessor implements Runnable {
 
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                Event event = eventQueue.take();
-                if (event.getType() == Event.Type.STDIN_MESSAGE) {
+                Event event = eventQueue.take(); // Un singur thread consumă secvențial coada
+                
+                // --- 1. Tratăm evenimentele de la PFD (Timeouts și Crashes) ---
+                if (event.getType() == Event.Type.PFD_TIMEOUT) {
+                    pfd.onTimeout();
+                } 
+                else if (event.getType() == Event.Type.CRASH_DETECTED) {
+                    String crashedNode = event.getPayload().getString("node");
+                    rb.onCrash(crashedNode);
+                } 
+                // --- 2. Tratăm mesajele normale de la rețea ---
+                else if (event.getType() == Event.Type.STDIN_MESSAGE) {
                     JSONObject msg = event.getPayload();
                     JSONObject body = msg.getJSONObject("body");
                     String msgType = body.getString("type");
@@ -72,16 +98,16 @@ public class EventProcessor implements Runnable {
                         reply.put("body", replyBody);
                         System.out.println(reply.toString());
                     }
+                    else if ("heartbeat".equals(msgType)) {
+                        // Semnalăm PFD-ului că nodul este viu
+                        pfd.onHeartbeat(msg.getString("src"));
+                    }
                     else if ("broadcast".equals(msgType)) {
                         int value = body.getInt("message");
                         
-                        // 1. Salvăm mesajul în memoria locală
-                        messages.add(value); 
-                        
-                        // 2. Cerem stratului Reliable Broadcast să îl distribuie sigur
                         rb.rbBcast(value);
+                        messages.add(value); // Îl livrăm și local (APP level)
 
-                        // 3. Confirmăm clientului că am preluat cererea
                         JSONObject replyBody = new JSONObject();
                         replyBody.put("type", "broadcast_ok");
                         replyBody.put("msg_id", messageCounter++);
@@ -96,13 +122,13 @@ public class EventProcessor implements Runnable {
                     else if ("beb_data".equals(msgType)) {
                         JSONObject payload = body.getJSONObject("payload");
                         int value = payload.getInt("message");
+                        String originalSender = payload.getString("original_sender");
+                        String senderOfBeb = msg.getString("src");
                         
-                        // Întrebăm Reliable Broadcast dacă acest mesaj e nou
-                        // Dacă e nou, funcția rbDeliver îl va și trimite automat (relay) mai departe!
-                        boolean isNewMessage = rb.rbDeliver(value);
+                        // rbDeliver se va ocupa singur de verificări și relay-uri Lazy!
+                        boolean isNewMessage = rb.rbDeliver(senderOfBeb, originalSender, value);
                         
                         if (isNewMessage) {
-                            // Dacă e un mesaj pe care nu l-am mai văzut, îl reținem
                             messages.add(value);
                         }
                     }

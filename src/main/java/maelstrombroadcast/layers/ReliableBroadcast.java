@@ -1,6 +1,9 @@
 package maelstrombroadcast.layers;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import org.json.JSONObject;
 
@@ -8,37 +11,70 @@ public class ReliableBroadcast {
     private final BestEffortBroadcast beb;
     private final String selfId;
     
-    // "delivered" din pseudocod: ține minte ce mesaje am procesat deja
-    // pentru a nu le re-trimite la infinit într-o buclă
-    private final Set<Integer> delivered = new CopyOnWriteArraySet<>();
+    // correct := Pi (Inițializată cu toate nodurile active)
+    private final Set<String> correct = new CopyOnWriteArraySet<>();
+    
+    // from[p] := ∅ (Ce mesaje au fost generate inițial de fiecare nod)
+    private final Map<String, Set<Integer>> from = new ConcurrentHashMap<>();
 
-    public ReliableBroadcast(BestEffortBroadcast beb, String selfId) {
+    public ReliableBroadcast(BestEffortBroadcast beb, String selfId, List<String> allNodes) {
         this.beb = beb;
         this.selfId = selfId;
+        
+        // La Init, toate nodurile sunt considerate "corecte"
+        this.correct.addAll(allNodes);
+        
+        for (String node : allNodes) {
+            from.put(node, new CopyOnWriteArraySet<>());
+        }
     }
 
-    // Funcția rbBcast(m) - apelată când primim un mesaj nou de la client
+    // upon event <rb, Broadcast | m> do
     public void rbBcast(int messageValue) {
+        // trigger <beb, Broadcast | [DATA, self, m]>
         JSONObject payload = new JSONObject();
         payload.put("message", messageValue);
-        payload.put("original_sender", selfId); // Pentru debugging
+        payload.put("original_sender", selfId);
         
-        // Trimitem prin BEB
         beb.bebBcast(payload);
     }
 
-    // Funcția rbDeliver(m) - apelată de EventProcessor când primim un mesaj prin BEB de la alt nod
-    public boolean rbDeliver(int messageValue) {
-        // Dacă nu am mai văzut acest mesaj
-        if (!delivered.contains(messageValue)) {
-            delivered.add(messageValue);
+    // upon event <beb, Deliver | p, [DATA, s, m]> do
+    public boolean rbDeliver(String senderOfBeb, String originalSender, int messageValue) {
+        Set<Integer> senderMessages = from.computeIfAbsent(originalSender, k -> new CopyOnWriteArraySet<>());
+        
+        // if m ∉ from[s] then
+        if (!senderMessages.contains(messageValue)) {
+            // from[s] := from[s] U {m}
+            senderMessages.add(messageValue);
             
-            // RELAY (Partea vitală din Reliable Broadcast):
-            // Îl dăm mai departe prin BEB ca să fim siguri că ajunge la toți
-            rbBcast(messageValue);
+            // if s ∉ correct then trigger <beb, Broadcast | [DATA, s, m]>
+            if (!correct.contains(originalSender)) {
+                JSONObject payload = new JSONObject();
+                payload.put("message", messageValue);
+                payload.put("original_sender", originalSender);
+                beb.bebBcast(payload);
+            }
             
-            return true; // Spunem aplicației noastre să îl salveze
+            return true; // Semnalăm aplicației (App) să îl livreze local
         }
-        return false; // L-am mai văzut, îl ignorăm
+        return false;
+    }
+
+    // upon event <P, Crash | p> do
+    public void onCrash(String p) {
+        // correct := correct \ {p}
+        correct.remove(p);
+        
+        // forall m ∈ from[p] do trigger <beb, Broadcast | [DATA, p, m]>
+        Set<Integer> senderMessages = from.get(p);
+        if (senderMessages != null) {
+            for (int m : senderMessages) {
+                JSONObject payload = new JSONObject();
+                payload.put("message", m);
+                payload.put("original_sender", p); // Menținem sursa originală a mesajului
+                beb.bebBcast(payload);
+            }
+        }
     }
 }
